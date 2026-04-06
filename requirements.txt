@@ -1,0 +1,6 @@
+# Core – cross-platform input capture & injection
+pynput>=1.7.6
+
+# macOS only: AppKit for accurate screen size (auto-skipped on Windows)
+# Install with: pip install pyobjc-framework-Cocoa
+# pyobjc-framework-Cocoa>=9.0
