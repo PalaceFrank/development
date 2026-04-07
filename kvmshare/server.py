@@ -53,8 +53,10 @@ class Server:
         self._cap_kbd: Optional[keyboard.Listener] = None
 
         self._mouse_ctrl = mouse.Controller()
+        self._kbd_ctrl = keyboard.Controller()
         self._running = True
         self._last_exit_time: float = 0.0  # monotonic time of last _exit_remote
+        self._pressed_keys: set = set()     # keys held while in REMOTE mode
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -228,6 +230,15 @@ class Server:
             self._cap_kbd.stop()
             self._cap_kbd = None
 
+        # Release any keys that were held while in REMOTE mode so Windows
+        # doesn't think they're still pressed after control returns.
+        for key in list(self._pressed_keys):
+            try:
+                self._kbd_ctrl.release(key)
+            except Exception:
+                pass
+        self._pressed_keys.clear()
+
         # Move cursor away from edge so monitor doesn't re-trigger immediately
         pos = self.cfg.remote_position
         px, py = self._pin_x, self._pin_y
@@ -262,9 +273,11 @@ class Server:
         self._send({"t": "ms", "dx": dx, "dy": dy})
 
     def _cap_on_press(self, key):
+        self._pressed_keys.add(key)
         self._send({"t": "kp", "k": _key_str(key), "p": True})
 
     def _cap_on_release(self, key):
+        self._pressed_keys.discard(key)
         self._send({"t": "kp", "k": _key_str(key), "p": False})
 
     # ------------------------------------------------------------------
