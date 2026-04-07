@@ -61,9 +61,10 @@ class Client:
         while True:
             try:
                 self._connect_and_loop()
+                log.info("Disconnected – retrying in 5 s")
             except Exception as exc:
                 log.error("Connection error: %s – retrying in 5 s", exc)
-                time.sleep(5)
+            time.sleep(5)
 
     # ------------------------------------------------------------------
     # TCP
@@ -83,8 +84,9 @@ class Client:
             conn.setsockopt(socket.IPPROTO_TCP, TCP_KEEPALIVE, 10)
         except Exception:
             pass
-        # Timeout en recv: si no llega nada en ping_interval*3s, la conexión murió
-        conn.settimeout(self.cfg.ping_interval * 3)
+        # Timeout en recv: si no llega nada en ping_interval*6s, la conexión murió
+        # Valor generoso para sobrevivir la transición LOCAL→REMOTE sin falsos timeouts
+        conn.settimeout(self.cfg.ping_interval * 6)
         with self._lock:
             self._conn = conn
         log.info("Connected – waiting for control handoff")
