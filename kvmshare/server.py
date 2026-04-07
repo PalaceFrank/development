@@ -85,15 +85,13 @@ class Server:
             log.info("Client connected from %s", addr)
             conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             with self._conn_lock:
-                old = self._conn
                 self._conn = conn
-            # Close previous connection so its recv_loop exits cleanly
-            if old is not None:
-                try:
-                    old.shutdown(socket.SHUT_RDWR)
-                    old.close()
-                except OSError:
-                    pass
+            # Send an immediate ping so the client knows the connection is live
+            # before the ping_loop's first sleep expires
+            try:
+                conn.sendall(encode({"t": "ping"}))
+            except OSError:
+                pass
             threading.Thread(
                 target=self._recv_loop, args=(conn,), daemon=True
             ).start()
@@ -141,7 +139,9 @@ class Server:
         t = event.get("t")
         if t == "sw" and event.get("dir") == "to_server":
             if self._mode == "REMOTE":
-                self._exit_remote()
+                # Run in a separate thread so _recv_loop isn't blocked while
+                # _exit_remote waits for cap listeners to stop
+                threading.Thread(target=self._exit_remote, daemon=True).start()
 
     # ------------------------------------------------------------------
     # Mode: LOCAL  – lightweight edge-detection listener (no suppress)
