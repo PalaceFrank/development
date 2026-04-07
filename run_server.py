@@ -7,20 +7,26 @@ Usage:
 
 import argparse
 import logging
+import os
 import sys
 
 # Make the package importable from repo root
-sys.path.insert(0, __file__.rsplit("/", 1)[0] if "/" in __file__ else ".")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from kvmshare.config import Config
 from kvmshare.server import Server
+
+# When bundled by PyInstaller, config.json lives next to the executable
+_BASE_DIR = os.path.dirname(sys.executable if getattr(sys, "frozen", False)
+                            else os.path.abspath(__file__))
+_DEFAULT_CONFIG = os.path.join(_BASE_DIR, "config.json")
 
 
 def main():
     parser = argparse.ArgumentParser(description="KVMShare server (has the keyboard & mouse)")
     parser.add_argument("--host", default=None, help="Bind address (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=None, help="TCP port (default: 24800)")
-    parser.add_argument("--config", default="config.json", help="Path to config.json")
+    parser.add_argument("--config", default=_DEFAULT_CONFIG, help="Path to config.json")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
@@ -36,15 +42,11 @@ def main():
     if args.port:
         cfg.port = args.port
 
-    print(f"""
-  ██╗  ██╗██╗   ██╗███╗   ███╗███████╗██╗  ██╗ █████╗ ██████╗ ███████╗
-  ██║ ██╔╝██║   ██║████╗ ████║██╔════╝██║  ██║██╔══██╗██╔══██╗██╔════╝
-  █████╔╝ ██║   ██║██╔████╔██║███████╗███████║███████║██████╔╝█████╗
-  ██╔═██╗ ╚██╗ ██╔╝██║╚██╔╝██║╚════██║██╔══██║██╔══██║██╔══██╗██╔══╝
-  ██║  ██╗ ╚████╔╝ ██║ ╚═╝ ██║███████║██║  ██║██║  ██║██║  ██║███████╗
-  ╚═╝  ╚═╝  ╚═══╝  ╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝
-
-  SERVER  |  Move cursor to the RIGHT EDGE to hand off control
+    print("""
+  +-----------------------------------------+
+  |  KVMShare SERVER                        |
+  |  Move cursor to the edge to hand off   |
+  +-----------------------------------------+
   """)
 
     server = Server(cfg)

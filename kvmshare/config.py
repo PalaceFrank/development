@@ -20,6 +20,10 @@ class Config:
     # Hotkey to force-return control to server (client-side edge + this combo)
     return_hotkey: str = "ctrl+alt+z"
 
+    # Where the client screen is relative to the server screen
+    # Values: "right" | "left" | "above" | "below"
+    remote_position: str = "right"
+
     @classmethod
     def from_file(cls, path: str = "config.json") -> "Config":
         if not os.path.exists(path):

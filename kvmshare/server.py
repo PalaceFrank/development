@@ -41,7 +41,7 @@ class Server:
         self._conn: socket.socket | None = None
         self._conn_lock = threading.Lock()
 
-        # Cursor pin position (right edge centre)
+        # Cursor pin position (set dynamically on edge trigger)
         self._pin_x = self.sw - self.cfg.edge_px
         self._pin_y = self.sh // 2
 
@@ -108,7 +108,9 @@ class Server:
         with self._conn_lock:
             if self._conn is conn:
                 self._conn = None
-        if self._mode == "REMOTE":
+        with self._mode_lock:
+            in_remote = self._mode == "REMOTE"
+        if in_remote:
             self._exit_remote()
 
     def _ping_loop(self, conn: socket.socket):
@@ -142,28 +144,50 @@ class Server:
     def _monitor_on_move(self, x, y):
         with self._conn_lock:
             connected = self._conn is not None
-        if connected and x >= self.sw - self.cfg.edge_px:
-            self._enter_remote(y)
+        if connected and self._edge_triggered(x, y):
+            self._enter_remote(x, y)
+
+    def _edge_triggered(self, x: int, y: int) -> bool:
+        pos = self.cfg.remote_position
+        ep = self.cfg.edge_px
+        if pos == "right":
+            return x >= self.sw - ep
+        if pos == "left":
+            return x <= ep
+        if pos == "above":
+            return y <= ep
+        if pos == "below":
+            return y >= self.sh - ep
+        return False
 
     # ------------------------------------------------------------------
     # Mode: REMOTE – suppressing listeners that forward events
     # ------------------------------------------------------------------
 
-    def _enter_remote(self, cursor_y: int):
+    def _enter_remote(self, cursor_x: int, cursor_y: int):
         with self._mode_lock:
             if self._mode == "REMOTE":
                 return
             self._mode = "REMOTE"
 
-        log.info("→ REMOTE mode")
+        log.info("→ REMOTE mode  (remote_position=%s)", self.cfg.remote_position)
 
         # Stop the monitor
         if self._monitor_listener:
             self._monitor_listener.stop()
             self._monitor_listener = None
 
-        # Pin cursor
-        self._pin_y = cursor_y
+        # Pin cursor at the edge that was triggered
+        pos = self.cfg.remote_position
+        ep = self.cfg.edge_px
+        if pos == "right":
+            self._pin_x, self._pin_y = self.sw - ep, cursor_y
+        elif pos == "left":
+            self._pin_x, self._pin_y = ep, cursor_y
+        elif pos == "above":
+            self._pin_x, self._pin_y = cursor_x, ep
+        elif pos == "below":
+            self._pin_x, self._pin_y = cursor_x, self.sh - ep
         self._mouse_ctrl.position = (self._pin_x, self._pin_y)
 
         # Start capturing listeners (suppress=True eats all local events)
@@ -197,7 +221,17 @@ class Server:
             self._cap_kbd = None
 
         # Move cursor away from edge so monitor doesn't re-trigger immediately
-        self._mouse_ctrl.position = (self.sw - 100, self._pin_y)
+        pos = self.cfg.remote_position
+        px, py = self._pin_x, self._pin_y
+        if pos == "right":
+            park = (self.sw - 100, py)
+        elif pos == "left":
+            park = (100, py)
+        elif pos == "above":
+            park = (px, 100)
+        else:  # below
+            park = (px, self.sh - 100)
+        self._mouse_ctrl.position = park
         self._start_monitor()
 
     # ------------------------------------------------------------------
@@ -239,7 +273,9 @@ class Server:
             log.warning("Send failed – dropping connection")
             with self._conn_lock:
                 self._conn = None
-            if self._mode == "REMOTE":
+            with self._mode_lock:
+                in_remote = self._mode == "REMOTE"
+            if in_remote:
                 self._exit_remote()
 
 

@@ -3,5 +3,6 @@
   "port": 24800,
   "edge_px": 3,
   "ping_interval": 5.0,
-  "return_hotkey": "ctrl+alt+z"
+  "return_hotkey": "ctrl+alt+z",
+  "remote_position": "right"
 }

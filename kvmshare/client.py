@@ -45,11 +45,16 @@ class Client:
         self._conn: socket.socket | None = None
         self._lock = threading.Lock()
 
+        self._hotkey_listener = self._build_hotkey_listener()
+
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
 
     def run(self):
+        if self._hotkey_listener:
+            self._hotkey_listener.start()
+            log.info("Return hotkey active: %s", self.cfg.return_hotkey)
         while True:
             try:
                 self._connect_and_loop()
@@ -128,13 +133,28 @@ class Client:
         ny = max(0, min(self.sh - 1, cy + dy))
         self._mouse.position = (nx, ny)
 
-        # Left-edge escape: hand control back to server
-        if nx <= self.cfg.edge_px:
-            log.info("Left edge hit – returning control to server")
+        # Return edge is the opposite of remote_position
+        ep = self.cfg.edge_px
+        pos = self.cfg.remote_position
+        triggered = (
+            (pos == "right"  and nx <= ep) or
+            (pos == "left"   and nx >= self.sw - ep) or
+            (pos == "above"  and ny >= self.sh - ep) or
+            (pos == "below"  and ny <= ep)
+        )
+        if triggered:
+            log.info("Return edge hit (%s-opposite) – returning control to server", pos)
             self._active = False
             self._send({"t": "sw", "dir": "to_server"})
-            # Park cursor away from edge so it doesn't re-trigger
-            self._mouse.position = (self.cfg.edge_px + 50, ny)
+            # Park cursor away from the return edge
+            if pos == "right":
+                self._mouse.position = (ep + 50, ny)
+            elif pos == "left":
+                self._mouse.position = (self.sw - ep - 50, ny)
+            elif pos == "above":
+                self._mouse.position = (nx, self.sh - ep - 50)
+            else:  # below
+                self._mouse.position = (nx, ep + 50)
 
     def _on_click(self, button_name: str, pressed: bool):
         btn = _parse_button(button_name)
@@ -173,6 +193,29 @@ class Client:
             conn.sendall(encode(event))
         except OSError as exc:
             log.warning("Send failed: %s", exc)
+
+    def _build_hotkey_listener(self):
+        """Build a GlobalHotKeys listener for the return_hotkey combo."""
+        combo = self.cfg.return_hotkey
+        # Convert "ctrl+alt+z" → "<ctrl>+<alt>+z" for pynput GlobalHotKeys
+        _modifiers = {"ctrl", "alt", "shift", "cmd", "win", "super"}
+        parts = [p.strip() for p in combo.lower().split("+")]
+        converted = [f"<{p}>" if p in _modifiers else p for p in parts]
+        hotkey_str = "+".join(converted)
+
+        def _on_hotkey():
+            if self._active:
+                log.info("Return hotkey (%s) pressed – returning control to server", combo)
+                self._active = False
+                cx, cy = self._mouse.position
+                self._send({"t": "sw", "dir": "to_server"})
+                self._mouse.position = (self.cfg.edge_px + 50, cy)
+
+        try:
+            return keyboard.GlobalHotKeys({hotkey_str: _on_hotkey})
+        except Exception as exc:
+            log.warning("Could not register hotkey %r: %s", hotkey_str, exc)
+            return None
 
 
 # ------------------------------------------------------------------
