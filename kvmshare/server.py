@@ -158,7 +158,7 @@ class Server:
         with self._mode_lock:
             if self._mode == "REMOTE":
                 return
-        if monotonic() - self._last_exit_time < 0.3:
+        if monotonic() - self._last_exit_time < 1.0:
             return
         with self._conn_lock:
             connected = self._conn is not None
@@ -225,6 +225,9 @@ class Server:
                 return
             self._mode = "LOCAL"
 
+        # Set cooldown immediately — the monitor checks this before the cursor
+        # is parked, so it must be set before any slow stop() calls below.
+        self._last_exit_time = monotonic()
         log.info("→ LOCAL mode")
 
         if self._cap_mouse:
@@ -254,7 +257,6 @@ class Server:
             park = (px, self.sh // 2)
         else:  # below
             park = (px, self.sh // 2)
-        self._last_exit_time = monotonic()
         self._mouse_ctrl.position = park
         # monitor listener never stopped — no need to restart it
 
