@@ -18,6 +18,7 @@ import socket
 import sys
 import threading
 import time
+from time import monotonic
 from typing import Optional
 
 from pynput import keyboard, mouse
@@ -53,6 +54,7 @@ class Server:
 
         self._mouse_ctrl = mouse.Controller()
         self._running = True
+        self._last_exit_time: float = 0.0  # monotonic time of last _exit_remote
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -143,6 +145,11 @@ class Server:
         self._monitor_listener.start()
 
     def _monitor_on_move(self, x, y):
+        with self._mode_lock:
+            if self._mode == "REMOTE":
+                return
+        if monotonic() - self._last_exit_time < 0.3:
+            return
         with self._conn_lock:
             connected = self._conn is not None
         if connected and self._edge_triggered(x, y):
@@ -225,13 +232,14 @@ class Server:
         pos = self.cfg.remote_position
         px, py = self._pin_x, self._pin_y
         if pos == "right":
-            park = (self.sw - 100, py)
+            park = (self.sw // 2, py)
         elif pos == "left":
-            park = (100, py)
+            park = (self.sw // 2, py)
         elif pos == "above":
-            park = (px, 100)
+            park = (px, self.sh // 2)
         else:  # below
-            park = (px, self.sh - 100)
+            park = (px, self.sh // 2)
+        self._last_exit_time = monotonic()
         self._mouse_ctrl.position = park
         self._start_monitor()
 
