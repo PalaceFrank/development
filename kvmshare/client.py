@@ -46,6 +46,7 @@ class Client:
         self._conn: Optional[socket.socket] = None
         self._lock = threading.Lock()
         self._last_return = 0.0   # timestamp del último return edge (cooldown)
+        self._pressed_keys: set = set()  # teclas actualmente inyectadas
 
         self._hotkey_listener = self._build_hotkey_listener()
 
@@ -165,6 +166,7 @@ class Client:
                 self._active = False
                 self._last_return = now
             log.info("Return edge hit (%s-opposite) – returning control to server", pos)
+            self._release_all_keys()
             self._send({"t": "sw", "dir": "to_server"})
             # Park cursor away from the return edge
             if pos == "right":
@@ -195,10 +197,21 @@ class Client:
         try:
             if pressed:
                 self._kbd.press(key)
+                self._pressed_keys.add(key)
             else:
                 self._kbd.release(key)
+                self._pressed_keys.discard(key)
         except Exception as exc:
             log.debug("Key inject failed for %r: %s", key_str, exc)
+
+    def _release_all_keys(self):
+        """Libera todas las teclas inyectadas para evitar que queden pegadas."""
+        for key in list(self._pressed_keys):
+            try:
+                self._kbd.release(key)
+            except Exception:
+                pass
+        self._pressed_keys.clear()
 
     # ------------------------------------------------------------------
     # Helpers
@@ -224,12 +237,37 @@ class Client:
         hotkey_str = "+".join(converted)
 
         def _on_hotkey():
-            if self._active:
-                log.info("Return hotkey (%s) pressed – returning control to server", combo)
+            with self._lock:
+                if not self._active:
+                    return
                 self._active = False
-                cx, cy = self._mouse.position
-                self._send({"t": "sw", "dir": "to_server"})
-                self._mouse.position = (self.cfg.edge_px + 50, cy)
+            log.info("Return hotkey (%s) pressed – returning control to server", combo)
+            self._release_all_keys()
+            cx, cy = self._mouse.position
+            self._send({"t": "sw", "dir": "to_server"})
+            self._mouse.position = (self.cfg.edge_px + 50, cy)
+
+        # En macOS, GlobalHotKeys requiere permisos de Accessibility.
+        # Si no están, no lo iniciamos para evitar bloquear el teclado del sistema.
+        if hasattr(keyboard, "GlobalHotKeys"):
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["osascript", "-e",
+                     'tell application "System Events" to return UI elements enabled'],
+                    capture_output=True, text=True, timeout=3
+                )
+                accessibility_ok = result.stdout.strip() == "true"
+            except Exception:
+                accessibility_ok = True  # no podemos verificar, intentamos igual
+
+            if not accessibility_ok:
+                log.warning(
+                    "Sin permisos de Accessibility — hotkey desactivado. "
+                    "Agrega esta app en System Settings > Privacy & Security > Accessibility. "
+                    "El return-by-edge sigue funcionando."
+                )
+                return None
 
         try:
             return keyboard.GlobalHotKeys({hotkey_str: _on_hotkey})
