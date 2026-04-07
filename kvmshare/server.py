@@ -182,12 +182,8 @@ class Server:
 
         log.info("→ REMOTE mode  (remote_position=%s)", self.cfg.remote_position)
 
-        # Stop the monitor
-        if self._monitor_listener:
-            self._monitor_listener.stop()
-            self._monitor_listener = None
-
         # Pin cursor at the edge that was triggered
+        # (monitor listener keeps running — _monitor_on_move ignores events while REMOTE)
         pos = self.cfg.remote_position
         ep = self.cfg.edge_px
         if pos == "right":
@@ -252,7 +248,7 @@ class Server:
             park = (px, self.sh // 2)
         self._last_exit_time = monotonic()
         self._mouse_ctrl.position = park
-        self._start_monitor()
+        # monitor listener never stopped — no need to restart it
 
     # ------------------------------------------------------------------
     # Capture callbacks (REMOTE mode)
