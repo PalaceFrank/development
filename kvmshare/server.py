@@ -122,7 +122,7 @@ class Server:
         with self._mode_lock:
             in_remote = self._mode == "REMOTE"
         if in_remote:
-            self._exit_remote()
+            threading.Thread(target=self._exit_remote, daemon=True).start()
 
     def _ping_loop(self, conn: socket.socket):
         while True:
@@ -302,7 +302,7 @@ class Server:
             with self._mode_lock:
                 in_remote = self._mode == "REMOTE"
             if in_remote:
-                self._exit_remote()
+                threading.Thread(target=self._exit_remote, daemon=True).start()
 
 
 def _key_str(key) -> str:
