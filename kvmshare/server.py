@@ -85,7 +85,15 @@ class Server:
             log.info("Client connected from %s", addr)
             conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             with self._conn_lock:
+                old = self._conn
                 self._conn = conn
+            # Close previous connection so its recv_loop exits cleanly
+            if old is not None:
+                try:
+                    old.shutdown(socket.SHUT_RDWR)
+                    old.close()
+                except OSError:
+                    pass
             threading.Thread(
                 target=self._recv_loop, args=(conn,), daemon=True
             ).start()
