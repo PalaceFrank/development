@@ -42,9 +42,10 @@ class Client:
         # Start cursor at centre of screen
         self._mouse.position = (self.sw // 2, self.sh // 2)
 
-        self._active = False      # True = this client has control
+        self._active = False      # True = this client has control (protegido por _lock)
         self._conn: Optional[socket.socket] = None
         self._lock = threading.Lock()
+        self._last_return = 0.0   # timestamp del último return edge (cooldown)
 
         self._hotkey_listener = self._build_hotkey_listener()
 
@@ -73,7 +74,16 @@ class Client:
             (self.server_host, self.cfg.port), timeout=10
         )
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        conn.settimeout(None)
+        # TCP keepalive: OS detecta conexiones muertas sin depender de pings
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        try:
+            import ctypes
+            TCP_KEEPALIVE = 0x10  # macOS
+            conn.setsockopt(socket.IPPROTO_TCP, TCP_KEEPALIVE, 10)
+        except Exception:
+            pass
+        # Timeout en recv: si no llega nada en ping_interval*3s, la conexión murió
+        conn.settimeout(self.cfg.ping_interval * 3)
         with self._lock:
             self._conn = conn
         log.info("Connected – waiting for control handoff")
@@ -84,6 +94,9 @@ class Client:
         while True:
             try:
                 chunk = conn.recv(4096)
+            except socket.timeout:
+                log.warning("No data received – connection stale, reconnecting")
+                break
             except OSError:
                 chunk = b""
             if not chunk:
@@ -96,8 +109,8 @@ class Client:
                     break
                 self._dispatch(event)
 
-        self._active = False
         with self._lock:
+            self._active = False
             self._conn = None
 
     # ------------------------------------------------------------------
@@ -120,9 +133,10 @@ class Client:
             self._on_key(event["k"], event["p"])
 
         # First event that isn't a ping means we now have control
-        if not self._active and t in ("mv", "mc", "ms", "kp"):
-            self._active = True
-            log.info("Control received")
+        with self._lock:
+            if not self._active and t in ("mv", "mc", "ms", "kp"):
+                self._active = True
+                log.info("Control received")
 
     # ------------------------------------------------------------------
     # Input injection
@@ -144,8 +158,13 @@ class Client:
             (pos == "below"  and ny <= ep)
         )
         if triggered:
+            now = time.monotonic()
+            with self._lock:
+                if not self._active or (now - self._last_return) < 1.0:
+                    return  # cooldown: evita re-trigger si cursor oscila en el borde
+                self._active = False
+                self._last_return = now
             log.info("Return edge hit (%s-opposite) – returning control to server", pos)
-            self._active = False
             self._send({"t": "sw", "dir": "to_server"})
             # Park cursor away from the return edge
             if pos == "right":
