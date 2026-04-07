@@ -18,6 +18,7 @@ import socket
 import sys
 import threading
 import time
+from typing import Optional
 
 from pynput import keyboard, mouse
 from pynput.mouse import Button
@@ -38,7 +39,7 @@ class Server:
         self._mode = "LOCAL"          # "LOCAL" | "REMOTE"
         self._mode_lock = threading.Lock()
 
-        self._conn: socket.socket | None = None
+        self._conn: Optional[socket.socket] = None
         self._conn_lock = threading.Lock()
 
         # Cursor pin position (set dynamically on edge trigger)
@@ -46,9 +47,9 @@ class Server:
         self._pin_y = self.sh // 2
 
         # Active pynput listeners (swapped on mode change)
-        self._monitor_listener: mouse.Listener | None = None
-        self._cap_mouse: mouse.Listener | None = None
-        self._cap_kbd: keyboard.Listener | None = None
+        self._monitor_listener: Optional[mouse.Listener] = None
+        self._cap_mouse: Optional[mouse.Listener] = None
+        self._cap_kbd: Optional[keyboard.Listener] = None
 
         self._mouse_ctrl = mouse.Controller()
         self._running = True

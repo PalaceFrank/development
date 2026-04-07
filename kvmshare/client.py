@@ -16,6 +16,7 @@ import logging
 import socket
 import threading
 import time
+from typing import Optional
 
 from pynput import keyboard, mouse
 from pynput.keyboard import Key
@@ -42,7 +43,7 @@ class Client:
         self._mouse.position = (self.sw // 2, self.sh // 2)
 
         self._active = False      # True = this client has control
-        self._conn: socket.socket | None = None
+        self._conn: Optional[socket.socket] = None
         self._lock = threading.Lock()
 
         self._hotkey_listener = self._build_hotkey_listener()
@@ -232,7 +233,7 @@ def _parse_key(k: str):
     return None
 
 
-def _parse_button(name: str) -> Button | None:
+def _parse_button(name: str) -> Optional[Button]:
     return {
         "left": Button.left,
         "right": Button.right,
