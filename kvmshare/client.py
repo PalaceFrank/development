@@ -84,12 +84,14 @@ class Client:
             conn.setsockopt(socket.IPPROTO_TCP, TCP_KEEPALIVE, 10)
         except Exception:
             pass
-        # Timeout en recv: si no llega nada en ping_interval*6s, la conexión murió
-        # Valor generoso para sobrevivir la transición LOCAL→REMOTE sin falsos timeouts
-        conn.settimeout(self.cfg.ping_interval * 6)
+        # Sin timeout en recv — el cliente envía sus propios pings para detectar
+        # conexiones muertas sin depender de que el servidor los mande
+        conn.settimeout(None)
         with self._lock:
             self._conn = conn
         log.info("Connected – waiting for control handoff")
+        # Lanzar ping loop propio antes de entrar al recv loop
+        threading.Thread(target=self._ping_loop, args=(conn,), daemon=True).start()
         self._recv_loop(conn)
 
     def _recv_loop(self, conn: socket.socket):
@@ -97,9 +99,6 @@ class Client:
         while True:
             try:
                 chunk = conn.recv(4096)
-            except socket.timeout:
-                log.warning("No data received – connection stale, reconnecting")
-                break
             except OSError:
                 chunk = b""
             if not chunk:
@@ -218,6 +217,23 @@ class Client:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _ping_loop(self, conn: socket.socket):
+        """Envía pings periódicos al servidor para detectar conexiones muertas."""
+        while True:
+            time.sleep(self.cfg.ping_interval)
+            with self._lock:
+                if self._conn is not conn:
+                    break
+                try:
+                    conn.sendall(encode({"t": "ping"}))
+                except OSError:
+                    log.warning("Ping failed – connection dead, reconnecting")
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    break
 
     def _send(self, event: dict):
         with self._lock:
