@@ -26,7 +26,7 @@ from pynput.mouse import Button
 
 from .config import Config
 from .protocol import decode_from_buffer, encode
-from .screen import get_screen_size
+from .screen import get_screen_rect
 
 log = logging.getLogger(__name__)
 
@@ -34,8 +34,11 @@ log = logging.getLogger(__name__)
 class Server:
     def __init__(self, config: Config):
         self.cfg = config
-        self.sw, self.sh = get_screen_size()
-        log.info("Screen: %dx%d", self.sw, self.sh)
+        rect = get_screen_rect()
+        self.sx, self.sy = rect[0], rect[1]          # top-left of primary monitor
+        self.sw, self.sh = rect[2] - rect[0], rect[3] - rect[1]
+        log.info("Screen rect: (%d,%d)-(%d,%d)  size: %dx%d",
+                 rect[0], rect[1], rect[2], rect[3], self.sw, self.sh)
 
         self._mode = "LOCAL"          # "LOCAL" | "REMOTE"
         self._mode_lock = threading.Lock()
@@ -44,8 +47,8 @@ class Server:
         self._conn_lock = threading.Lock()
 
         # Cursor pin position (set dynamically on edge trigger)
-        self._pin_x = self.sw - self.cfg.edge_px
-        self._pin_y = self.sh // 2
+        self._pin_x = self.sx + self.sw - self.cfg.edge_px
+        self._pin_y = self.sy + self.sh // 2
 
         # Active pynput listeners (swapped on mode change)
         self._monitor_listener: Optional[mouse.Listener] = None
@@ -169,13 +172,13 @@ class Server:
         pos = self.cfg.remote_position
         ep = self.cfg.edge_px
         if pos == "right":
-            return x >= self.sw - ep
+            return x >= self.sx + self.sw - ep
         if pos == "left":
-            return x <= ep
+            return x <= self.sx + ep
         if pos == "above":
-            return y <= ep
+            return y <= self.sy + ep
         if pos == "below":
-            return y >= self.sh - ep
+            return y >= self.sy + self.sh - ep
         return False
 
     # ------------------------------------------------------------------
@@ -195,13 +198,13 @@ class Server:
         pos = self.cfg.remote_position
         ep = self.cfg.edge_px
         if pos == "right":
-            self._pin_x, self._pin_y = self.sw - ep, cursor_y
+            self._pin_x, self._pin_y = self.sx + self.sw - ep, cursor_y
         elif pos == "left":
-            self._pin_x, self._pin_y = ep, cursor_y
+            self._pin_x, self._pin_y = self.sx + ep, cursor_y
         elif pos == "above":
-            self._pin_x, self._pin_y = cursor_x, ep
+            self._pin_x, self._pin_y = cursor_x, self.sy + ep
         elif pos == "below":
-            self._pin_x, self._pin_y = cursor_x, self.sh - ep
+            self._pin_x, self._pin_y = cursor_x, self.sy + self.sh - ep
         self._mouse_ctrl.position = (self._pin_x, self._pin_y)
 
         # Start capturing listeners (suppress=True eats all local events)
@@ -250,13 +253,13 @@ class Server:
         pos = self.cfg.remote_position
         px, py = self._pin_x, self._pin_y
         if pos == "right":
-            park = (self.sw // 2, py)
+            park = (self.sx + self.sw // 2, py)
         elif pos == "left":
-            park = (self.sw // 2, py)
+            park = (self.sx + self.sw // 2, py)
         elif pos == "above":
-            park = (px, self.sh // 2)
+            park = (px, self.sy + self.sh // 2)
         else:  # below
-            park = (px, self.sh // 2)
+            park = (px, self.sy + self.sh // 2)
         self._mouse_ctrl.position = park
         # monitor listener never stopped — no need to restart it
 

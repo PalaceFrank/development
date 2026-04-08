@@ -4,5 +4,5 @@
   "edge_px": 20,
   "ping_interval": 5.0,
   "return_hotkey": "ctrl+alt+z",
-  "remote_position": "right"
+  "remote_position": "left"
 }
